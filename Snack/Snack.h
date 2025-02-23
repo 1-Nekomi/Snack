@@ -2,7 +2,8 @@
 #define _SNACK_H_
 
 #define MAP_MAXSIZE 25
-#define CHAR_INTERVAL 10 //字符输出间隔，用于字母固定输出函数中
+#define CHAR_INTERVAL 5 //字符输出间隔，用于字母固定输出函数中
+#define SPEED 500 //ms单位，表示贪吃蛇多少秒走一格子
 
 typedef int Object;
 typedef char Direction;

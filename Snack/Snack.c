@@ -14,13 +14,16 @@
 #define gotoxy(x,y) printf("%c[%d;%dH",27,y,x) //移动光标到(x.y)位置
 
 #define ClearLine(x,y) \
-gotoxy(x,y);printf("                                               \
+gotoxy(x,y);printf("                                        \
          ");gotoxy(x,y)//清除某一行
 
 #define FixedStr(x,y,str) if(!FixStr(x,y,str))goto Reset
 
 int map[MAP_MAXSIZE][MAP_MAXSIZE];
 Snack player;
+char IsGaming = FALSE;
+long score = 0;
+long Maxscore = 0;
 
 //控制台光标获取XY坐标
 static void GetCursorXY(int* row, int* col);
@@ -49,14 +52,30 @@ static void InitSnack(Snack *sna);
 //地图初始化
 static void InitMap();
 
-//地图矩阵更新
+//地图物品放置
 static void SetMap(int x,int y,Object obj);
+
+//清除地图某一格
+static void ClearMap(int x, int y);
 
 //地图绘制
 static void MapView();
 
 //蛇方向控制
 static void CtrlSnack(Snack *sna,Direction *dire);
+
+//食物随机生成
+static void SetFood();
+
+//蛇前进
+static int SnackHeadMove(Snack *sna);
+
+//蛇身体前进，额外需要头结点移动前的坐标数据
+static void SnackBodyMove(Snack *sna,int x,int y);
+
+//蛇吃豆
+static int SnackEat(Snack *sna);
+
 
 
 /*
@@ -149,9 +168,15 @@ static void InitMap() {
 static void SetMap(int x, int y, Object obj) {
 	if (x<0 || x>MAP_MAXSIZE || y<0 || y>MAP_MAXSIZE)return ;
 
-	if (obj == ROAD || obj == HEAD || obj == BODY || obj == FOOD) {
+	if ((obj == HEAD || obj == BODY || obj == FOOD) && (map[x][y] == ROAD || map[x][y] == FOOD)) {
 		map[x][y] = obj;
 	}
+}
+
+static void ClearMap(int x, int y) {
+	if (x<0 || x>MAP_MAXSIZE || y<0 || y>MAP_MAXSIZE)return;
+
+	map[x][y] = ROAD;
 }
 
 static void MapView(){
@@ -172,21 +197,243 @@ static void MapView(){
 static void CtrlSnack(Snack *sna,Direction *dire) {
 	if (StrCmp(dire, FRONT) != TRUE && StrCmp(dire, BACK) != TRUE
 		&& StrCmp(dire, LEFT) != TRUE && StrCmp(dire, RIGHT) != TRUE)return;
-	StrCpy(sna->Fr,dire);
+
+	//只有头时可以随意调整方向，有身子时不能反方向移动
+	if(sna->length == 1)
+		StrCpy(sna->Fr,dire);
+	else {
+		if (StrCmp(dire, FRONT) == TRUE && StrCmp(sna->Fr, BACK) == TRUE) return;
+		else if (StrCmp(dire, BACK) == TRUE && StrCmp(sna->Fr, FRONT) == TRUE)return;
+		else if (StrCmp(dire, LEFT) == TRUE && StrCmp(sna->Fr, RIGHT) == TRUE)return;
+		else if (StrCmp(dire, RIGHT) == TRUE && StrCmp(sna->Fr, LEFT) == TRUE)return;
+		StrCpy(sna->Fr, dire);
+	}
+}
+
+static void SetFood() {
+	int fx, fy;
+	while ((fx = random())>=MAP_MAXSIZE || fx<0);
+	while ((fy = random())>=MAP_MAXSIZE || fy<0);
+	SetMap(fx,fy,FOOD);
+}
+
+static int SnackHeadMove(Snack *sna) {
+	//判断蛇的前进方向，然后根据下一格的内容进行判断并移动
+	if (StrCmp(sna->Fr, RIGHT)) {
+		if (sna->y[0] + 1 >= MAP_MAXSIZE) return FALSE;
+		switch (map[sna->x[0]][sna->y[0]+1]) {
+			case ROAD: { 
+				sna->y[0]++; 
+				SetMap(sna->x[0], sna->y[0], HEAD); 
+			}break;
+
+			case FOOD: { 
+				sna->y[0]++; 
+				SetMap(sna->x[0], sna->y[0], HEAD); 
+				if (!SnackEat(sna))return FALSE;
+			}break;
+
+			default:return FALSE; break;
+		}
+
+		if(sna->length == 1)
+			ClearMap(sna->x[0], sna->y[0] - 1);
+		else {
+			ClearMap(sna->x[0], sna->y[0] - 1);
+			SetMap(sna->x[0], sna->y[0] - 1, BODY);
+		}
+
+		SnackBodyMove(sna, sna->x[0], sna->y[0] - 1);
+	}
+	else if (StrCmp(sna->Fr, LEFT)) {
+		if (sna->y[0] - 1 < 0) return FALSE;
+		switch (map[sna->x[0]][sna->y[0] - 1]) {
+			case ROAD: { 
+				sna->y[0]--; 
+				SetMap(sna->x[0], sna->y[0], HEAD); 
+			}break;
+
+			case FOOD: {
+				sna->y[0]--;
+				SetMap(sna->x[0], sna->y[0], HEAD); 
+				if (!SnackEat(sna))return FALSE;
+			}break;
+
+			default:return FALSE; break;
+		}
+
+		if (sna->length == 1)
+			ClearMap(sna->x[0], sna->y[0] + 1);
+		else {
+			ClearMap(sna->x[0], sna->y[0] + 1);
+			SetMap(sna->x[0], sna->y[0] + 1, BODY);
+		}
+			
+		SnackBodyMove(sna, sna->x[0], sna->y[0] + 1);
+	}
+	else if (StrCmp(sna->Fr, BACK)) {
+		if (sna->x[0] + 1 >= MAP_MAXSIZE) return FALSE;
+		switch (map[sna->x[0] + 1][sna->y[0]]) {
+			case ROAD: { 
+				sna->x[0]++; 
+				SetMap(sna->x[0], sna->y[0], HEAD); 
+			}break;
+
+			case FOOD: { 
+				sna->x[0]++; 
+				SetMap(sna->x[0], sna->y[0], HEAD); 
+				if (!SnackEat(sna))return FALSE;
+			}break;
+
+			default:return FALSE; break;
+		}
+
+		if(sna->length == 1)
+			ClearMap(sna->x[0] - 1, sna->y[0]);
+		else {
+			ClearMap(sna->x[0] - 1, sna->y[0]);
+			SetMap(sna->x[0] - 1, sna->y[0], BODY);
+		}
+		SnackBodyMove(sna, sna->x[0] - 1, sna->y[0]);
+	}
+	else if (StrCmp(sna->Fr, FRONT)) {
+		if (sna->x[0] - 1 < 0) return FALSE;
+		switch (map[sna->x[0] - 1][sna->y[0]]) {
+			case ROAD: { 
+				sna->x[0]--; 
+				SetMap(sna->x[0], sna->y[0], HEAD);
+			} break;
+
+			case FOOD: { 
+				sna->x[0]--; 
+				SetMap(sna->x[0], sna->y[0], HEAD); 
+				if(!SnackEat(sna))return FALSE; 
+			}break;
+
+			default:return FALSE; break;
+		}
+
+		if(sna->length == 1)
+			ClearMap(sna->x[0] + 1, sna->y[0]);
+		else {
+			ClearMap(sna->x[0] + 1, sna->y[0]);
+			SetMap(sna->x[0] + 1, sna->y[0], BODY);
+		}
+		SnackBodyMove(sna, sna->x[0] + 1, sna->y[0]);
+	}
+	return TRUE;
+}
+
+static void SnackBodyMove(Snack* sna,int x,int y) {
+	if (x<0 || x>MAP_MAXSIZE || y<0 || y>MAP_MAXSIZE )return;
+
+	for (int i = sna->length-1; i >= 1 ; i--) {
+		if (i == sna->length - 1) 
+			ClearMap(sna->x[i], sna->y[i]);
+		else
+			SetMap(sna->x[i], sna->y[i], BODY);
+
+		if (i == 1) {
+			sna->x[i] = x;
+			sna->y[i] = y;
+			break;
+		}
+
+		sna->x[i] = sna->x[i - 1];
+		sna->y[i] = sna->y[i - 1];
+		
+	}
+}
+
+static int SnackEat(Snack* sna) {
+	//蛇只有头的时候，下一个方块生成于头前进方向的正后方
+	score += 5;
+	if (sna->length == 1) {
+		if (StrCmp(sna->Fr, FRONT)) {
+			if (sna->x[0] + 1 < 0) return FALSE;
+			sna->x[1] = sna->x[0] + 1;
+			sna->y[1] = sna->y[0];
+		}
+		else if (StrCmp(sna->Fr, BACK)) {
+			if (sna->x[0] - 1 < 0) return FALSE;
+			sna->x[1] = sna->x[0] - 1;
+			sna->y[1] = sna->y[0];
+		}
+		else if (StrCmp(sna->Fr, LEFT)) {
+			if (sna->y[0] + 1 < 0) return FALSE;
+			sna->x[1] = sna->x[0];
+			sna->y[1] = sna->y[0] + 1;
+		}
+		else if (StrCmp(sna->Fr, RIGHT)) {
+			if (sna->y[0] - 1 < 0) return FALSE;
+			sna->x[1] = sna->x[0];
+			sna->y[1] = sna->y[0] - 1;
+		}
+		SetMap(sna->x[1], sna->y[1], BODY);
+		sna->length++;
+		return TRUE;
+	}
+
+	//蛇有两格及以上，随机生成于身体尾部格四周空闲的区域
+
+	int lx = sna->x[sna->length - 1];
+	int ly = sna->y[sna->length - 1];
+
+	//尝试寻找其上下左右可能存在的空位
+	if (lx + 1 < MAP_MAXSIZE && map[lx + 1][ly] == ROAD) {
+		sna->x[sna->length] = lx + 1;
+		sna->y[sna->length] = ly;
+		SetMap(lx + 1, ly, BODY);
+	}
+	else if (lx - 1 >= 0 && map[lx - 1][ly] == ROAD) {
+		sna->x[sna->length] = lx - 1;
+		sna->y[sna->length] = ly;
+		SetMap(lx - 1, ly, BODY);
+	}
+	else if (ly + 1 < MAP_MAXSIZE && map[lx][ly + 1] == ROAD) {
+		sna->x[sna->length] = lx;
+		sna->y[sna->length] = ly + 1;
+		SetMap(lx, ly + 1, BODY);
+	}
+	else if (ly - 1 >= 0 && map[lx][ly - 1] == ROAD) {
+		sna->x[sna->length] = lx;
+		sna->y[sna->length] = ly - 1;
+		SetMap(lx, ly - 1, BODY);
+	}
+
+	sna->length++;
+	return TRUE;
 }
 
 void GameStart(){
+	HideCursor;
+	FixedStr(MAP_MAXSIZE * 2 + 5, 3, "Welcome to the Greedy Snake Game!");
+	FixedStr(MAP_MAXSIZE * 2 + 5, 5, "Enter WASD to control the direction of the snake");
+	FixedStr(MAP_MAXSIZE * 2 + 5, 7, "Your best score:");
+	FixedStr(MAP_MAXSIZE * 2 + 5, MAP_MAXSIZE/2, "Your score:");
 Reset:
 	gotoxy(0, 0);
 	InitMap();
 	InitSnack(&player);
-	HideCursor;
+	IsGaming = FALSE;
 	char order = '\0';
-	FixedStr(MAP_MAXSIZE * 2 + 5, 3, "Welcome to the Greedy Snake Game!");
-	FixedStr(MAP_MAXSIZE * 2 + 5, 5, "Your score:");
+	
+	int count = 0;
+	score = 0;
+	ClearLine(MAP_MAXSIZE * 2 + 16, MAP_MAXSIZE / 2);
+	ClearLine(MAP_MAXSIZE * 2 + 21, 7);
+
+	//最好成绩分数输出
+	int ly, lx;
+	gotoxy(MAP_MAXSIZE * 2 + 21, 7);
+	printf(L_RED"%ld"COLOR_END, Maxscore);
+	gotoxy(0, 0);
+
 	while(1){
 		MapView();
+		//读取缓冲区，设置蛇的方向
 		if (_kbhit()) {
+			IsGaming = TRUE;
 			order = _getch();
 			switch (order) {
 				case 'W':CtrlSnack(&player, FRONT); break;
@@ -198,6 +445,32 @@ Reset:
 				case 'a':CtrlSnack(&player, LEFT); break;
 				case 's':CtrlSnack(&player, BACK); break;
 			}
+		}
+		if (IsGaming) {
+			//count类似于滴答数，用于计数，也相当于另一种程度上的计时
+			count++;
+			count %= 65536;
+			
+			//分数面板输出
+			GetCursorXY(&ly, &lx);
+			gotoxy(MAP_MAXSIZE * 2 + 16, MAP_MAXSIZE / 2);
+			printf(L_BLUE"%ld"COLOR_END, score);
+			gotoxy(lx, ly);
+
+
+			//该部分用于设定放置Food和蛇行走的间隔，无法设置精确时间
+			if (count % 256 == 0)
+				SetFood();
+			if (count % 16 == 0) {
+				if (!SnackHeadMove(&player)) {
+					FixedStr(MAP_MAXSIZE * 2 + 5, 15, "Game Over");
+					_getch();
+					ClearLine(MAP_MAXSIZE * 2 + 5, 15);
+					if (score > Maxscore) Maxscore = score;
+					goto Reset;
+				}
+			}
+			if (count % 128 == 0) score += 10;
 		}
 		gotoxy(0,0);
 	}

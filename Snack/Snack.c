@@ -77,7 +77,6 @@ static void SnackBodyMove(Snack *sna,int x,int y);
 static int SnackEat(Snack *sna);
 
 
-
 /*
 函数具体实现
 */
@@ -208,6 +207,7 @@ static void CtrlSnack(Snack *sna,Direction *dire) {
 		else if (StrCmp(dire, RIGHT) == TRUE && StrCmp(sna->Fr, LEFT) == TRUE)return;
 		StrCpy(sna->Fr, dire);
 	}
+	SnackHeadMove(sna);
 }
 
 static void SetFood() {

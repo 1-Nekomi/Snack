@@ -1,6 +1,6 @@
 #include<stdio.h>
 #include"OutColor.h"
-#include"Snack.h"
+#include"Snake.h"
 
 int main()
 {
